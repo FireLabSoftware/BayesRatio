@@ -1,0 +1,69 @@
+Basic intro to BayesRatio:
+
+We start with two samples, arbitrarily named experimental (Expt) and Reference (Ref).  Each sample consists of a number of individual objects, some of which fall into a class which we will call "success".  Numerically we need four numbers to describe the results, 
+TExpt: Total observed instances ('Experimental' sample)  
+PExpt: Observed success instances ('Experimental' sample)
+TRef: Total observed instances ('Reference' sample)  
+PRef: Observed success instances ('Reference' sample)
+
+Our interest is in the hypothesis of a substantial difference in success rates in between experiment and reference.  
+
+Let's define k as the minimum fold-differencewhich we would consider biologically significant (k might be 2-fold, 5-fold, 10-fold, etc).  We're almost certainly not interested in a hypothesis if we were "near certain" of some difference between the two samples but only certain of that difference being at least 1.0001-fold.  Conversely if we were near-certain of a difference between the samples of at least 100-fold, that would likely merit further investigation.   
+
+The BayesRatio package is designed to provide a provisional fold difference in success rates that we can work with.  To avoid chasing false leads, the raw fold difference is adjusted back toward 1.0 as far as is needed to generate a conservative estimate where the observed data would be unlikely unless such a difference was present.  The final parameter that the program needs (in addition to the observed counts of events PExpt,TExpt,PRef, TRef) is a target value of false discovery.  The choice of FDR is at the users discretion, but a reasonable guide is to take a target number of false discoveries for an experiment (e.g. 0.05) and divide by the number of hypotheses tested (often the number of classes to be tested, or genes, or species).  For experiments where either over- or under- representation in the experimental sample seems of interest, we'd divide the FDR by two.  So for a screen of 2000 genes where we're interested in either over or under expression and wish to have a maximum of 0.05 false calls on average, we'd set FDR=0.05/(2*2000).
+
+There are several ways to engage the calculation engine for BayesRatio, but for the moment, I'll suggest the function "ConservativeFoldDifference".  Using this looks like 
+
+A=ConservativeFoldDifference(PExpt,PRef,TExpt,TRef,FDR).
+
+If the data are insufficient to infer any significant difference in representation in the two samples, this function returns 1.0.  If there is evidence for less representation in the experimental sample than in the control sample, the function returns a number that is <1.0 where this number is the most conservative (closest to 1.0) ratio for the two that could conceivably explain the data.  Likewise a result that is >1.0 indicates a confidently higher value of the incidence of C-class events in the experimental sample.
+
+A reasonable application of this function is to assign ConservativeFoldDifference to each gene or sequence type when compared between two datasets, then sort the genes (e.g. in a spreadsheet) to find those with the lowest and highest fold differences.  
+
+The algorithm behind BayesRatio is reasonably evident from the code... I think it would be called "Bayesian Maximum Likelihood Worst-case ratio estimation."  Such tools balance the extremes of simple P-value ranking (how confident are we or any difference; which will drive the user toward the species with the highest representation even if the resulting fold-differences may be too small for biological significance) and blind ranking by fold difference in observed ratio (which is highly sensitive to sampling fluctuations in low-frequency species).  As a useful compromise between the two extremes, BayesRatio (or any other such tool) still suffers from needing to make a choice between being "sure" of a difference (thereby tilting toward species with higher instance counts and greater statistical certainty even if fold-differences are modest) and being "impressed" by a raw fold difference (thereby tilting in aggregate toward samples with lower instance counts and greater noise).  Significantly the ranking results from BayesRatio are not depth independent... deeper sampling will tend to push toward identification of differences affecting rarer species. 
+
+Some sample code
+
+
+Start with a list of genes and hit numbers that looks like this (MyGeneByGeneInput.txt: tab delimited format, first line are headings)
+
+Gene   Expt Ref
+Gene1   100 200
+Gene2   200 400
+Gene3   10 500
+Gene4   691 902
+
+The following code will then generate a list that has fractions for each gene (simple division) and a last column that is a "worst case" estimate of the fold difference (1.0 if the data are not different from 1, using a FDR rate of 0.05 in this case).  The last column will be <<1 if there is clearly more representation in the reference sample, and >>1 if there is more representation in the experimental sample.  Importantly, sorting by the last column sorts by an estimate of the minimal fold difference consistent with the data.
+
+
+##################
+from BayesRatioAH import ConservativeFoldDifference
+InputFile=open('MyGeneByGeneInput.txt',mode='rU')
+OutputFile=open('MyGeneByGeneOutput.txt',mode='w')
+OutputFile.write('Gene\tPExpt\tfExpt\tPRef\tfRef\tConservativeRatio\r')
+GeneList=[]
+ExptCountList=[]
+RefCountList=[]
+for Line0 in InputFile:
+    LineSplit0=Line0.strip().split('\t')
+    if LineSplit0[0]=='Gene':
+        continue
+    else:
+        GeneList.append(LineSplit0[0])
+        ExptCountList.append(int(LineSplit0[1]))
+        RefCountList.append(int(LineSplit0[2]))
+NumGenes=len(GeneList)
+TExpt=sum(ExptCountList)
+TRef=sum(RefCountList)
+FDR=0.05/(2*len(GeneList))
+
+for GName,PExpt,PRef in zip(GeneList,ExptCountList,RefCountList):
+    BR_g = ConservativeFoldDifference ( PExpt , PRef,  TExpt , TRef, FDR)
+    OutputFile.write(GName+'\t'+str(PExpt)+'\t'+str(float(PExpt)/TExpt)+'\t'+str(PRef)+'\t'+str(float(PRef)/TRef)+'\t'+str(BR_g)+'\r')
+InputFile.close()
+OutputFile.close()
+##################
+
+Then open up the new file with Excel and sort by the last column (BR_g) to rank candidates for further analysis.
+
+
